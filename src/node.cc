@@ -23,6 +23,7 @@
 
 // ========== local headers ==========
 
+#include <iostream>
 #include "debug_utils-inl.h"
 #include "env-inl.h"
 #include "histogram-inl.h"
@@ -91,10 +92,9 @@
 #include <sys/types.h>
 
 #if defined(NODE_HAVE_I18N_SUPPORT)
-#include <unicode/uvernum.h>
 #include <unicode/utypes.h>
+#include <unicode/uvernum.h>
 #endif
-
 
 #if defined(LEAK_SANITIZER)
 #include <sanitizer/lsan_interface.h>
@@ -236,17 +236,18 @@ int Environment::InitializeInspector(
 }
 #endif  // HAVE_INSPECTOR
 
-#define ATOMIC_WAIT_EVENTS(V)                                               \
-  V(kStartWait,           "started")                                        \
-  V(kWokenUp,             "was woken up by another thread")                 \
-  V(kTimedOut,            "timed out")                                      \
-  V(kTerminatedExecution, "was stopped by terminated execution")            \
-  V(kAPIStopped,          "was stopped through the embedder API")           \
-  V(kNotEqual,            "did not wait because the values mismatched")     \
+#define ATOMIC_WAIT_EVENTS(V)                                                  \
+  V(kStartWait, "started")                                                     \
+  V(kWokenUp, "was woken up by another thread")                                \
+  V(kTimedOut, "timed out")                                                    \
+  V(kTerminatedExecution, "was stopped by terminated execution")               \
+  V(kAPIStopped, "was stopped through the embedder API")                       \
+  V(kNotEqual, "did not wait because the values mismatched")
 
 static void AtomicsWaitCallback(Isolate::AtomicsWaitEvent event,
                                 Local<v8::SharedArrayBuffer> array_buffer,
-                                size_t offset_in_bytes, int64_t value,
+                                size_t offset_in_bytes,
+                                int64_t value,
                                 double timeout_in_ms,
                                 Isolate::AtomicsWaitWakeHandle* stop_handle,
                                 void* data) {
@@ -254,10 +255,10 @@ static void AtomicsWaitCallback(Isolate::AtomicsWaitEvent event,
 
   const char* message = "(unknown event)";
   switch (event) {
-#define V(key, msg)                         \
-    case Isolate::AtomicsWaitEvent::key:    \
-      message = msg;                        \
-      break;
+#define V(key, msg)                                                            \
+  case Isolate::AtomicsWaitEvent::key:                                         \
+    message = msg;                                                             \
+    break;
     ATOMIC_WAIT_EVENTS(V)
 #undef V
   }
@@ -285,10 +286,12 @@ void Environment::InitializeDiagnostics() {
     isolate_->SetCaptureStackTraceForUncaughtExceptions(true);
   if (options_->trace_atomics_wait) {
     isolate_->SetAtomicsWaitCallback(AtomicsWaitCallback, this);
-    AddCleanupHook([](void* data) {
-      Environment* env = static_cast<Environment*>(data);
-      env->isolate()->SetAtomicsWaitCallback(nullptr, nullptr);
-    }, this);
+    AddCleanupHook(
+        [](void* data) {
+          Environment* env = static_cast<Environment*>(data);
+          env->isolate()->SetAtomicsWaitCallback(nullptr, nullptr);
+        },
+        this);
   }
 
 #if defined HAVE_DTRACE || defined HAVE_ETW
@@ -390,6 +393,7 @@ MaybeLocal<Value> Environment::BootstrapNode() {
 }
 
 MaybeLocal<Value> Environment::RunBootstrapping() {
+  std::cout << "RunBootstrapping" << std::endl;
   EscapableHandleScope scope(isolate_);
 
   CHECK(!has_run_bootstrapping_code());
@@ -415,8 +419,8 @@ MaybeLocal<Value> Environment::RunBootstrapping() {
   return scope.Escape(result);
 }
 
-static
-MaybeLocal<Value> StartExecution(Environment* env, const char* main_script_id) {
+static MaybeLocal<Value> StartExecution(Environment* env,
+                                        const char* main_script_id) {
   EscapableHandleScope scope(env->isolate());
   CHECK_NOT_NULL(main_script_id);
 
@@ -431,12 +435,12 @@ MaybeLocal<Value> StartExecution(Environment* env, const char* main_script_id) {
       ExecuteBootstrapper(env, main_script_id, &arguments));
 }
 
+/** 真正的执行函数 */
 MaybeLocal<Value> StartExecution(Environment* env, StartExecutionCallback cb) {
-  InternalCallbackScope callback_scope(
-      env,
-      Object::New(env->isolate()),
-      { 1, 0 },
-      InternalCallbackScope::kSkipAsyncHooks);
+  InternalCallbackScope callback_scope(env,
+                                       Object::New(env->isolate()),
+                                       {1, 0},
+                                       InternalCallbackScope::kSkipAsyncHooks);
 
   if (cb != nullptr) {
     EscapableHandleScope scope(env->isolate());
@@ -468,6 +472,8 @@ MaybeLocal<Value> StartExecution(Environment* env, StartExecutionCallback cb) {
     first_argv = env->argv()[1];
   }
 
+  std::cout << "first_argv:" << first_argv << std::endl;
+
   if (first_argv == "inspect") {
     return StartExecution(env, "internal/main/inspect");
   }
@@ -479,7 +485,6 @@ MaybeLocal<Value> StartExecution(Environment* env, StartExecutionCallback cb) {
   if (per_process::cli_options->print_help) {
     return StartExecution(env, "internal/main/print_help");
   }
-
 
   if (env->options()->prof_process) {
     return StartExecution(env, "internal/main/prof_process");
@@ -574,7 +579,6 @@ static struct {
 } stdio[1 + STDERR_FILENO];
 #endif  // __POSIX__
 
-
 inline void PlatformInit() {
 #ifdef __POSIX__
 #if HAVE_INSPECTOR
@@ -587,16 +591,12 @@ inline void PlatformInit() {
   // Make sure file descriptors 0-2 are valid before we start logging anything.
   for (auto& s : stdio) {
     const int fd = &s - stdio;
-    if (fstat(fd, &s.stat) == 0)
-      continue;
+    if (fstat(fd, &s.stat) == 0) continue;
     // Anything but EBADF means something is seriously wrong.  We don't
     // have to special-case EINTR, fstat() is not interruptible.
-    if (errno != EBADF)
-      ABORT();
-    if (fd != open("/dev/null", O_RDWR))
-      ABORT();
-    if (fstat(fd, &s.stat) != 0)
-      ABORT();
+    if (errno != EBADF) ABORT();
+    if (fd != open("/dev/null", O_RDWR)) ABORT();
+    if (fstat(fd, &s.stat) != 0) ABORT();
   }
 
 #if HAVE_INSPECTOR
@@ -613,8 +613,7 @@ inline void PlatformInit() {
   // it evaluates to 32, 34 or 64, depending on whether RT signals are enabled.
   // Counting up to SIGRTMIN doesn't work for the same reason.
   for (unsigned nr = 1; nr < kMaxSignal; nr += 1) {
-    if (nr == SIGKILL || nr == SIGSTOP)
-      continue;
+    if (nr == SIGKILL || nr == SIGSTOP) continue;
     act.sa_handler = (nr == SIGPIPE || nr == SIGXFSZ) ? SIG_IGN : SIG_DFL;
     CHECK_EQ(0, sigaction(nr, &act, nullptr));
   }
@@ -627,16 +626,14 @@ inline void PlatformInit() {
     const int fd = &s - stdio;
     int err;
 
-    do
-      s.flags = fcntl(fd, F_GETFL);
+    do s.flags = fcntl(fd, F_GETFL);
     while (s.flags == -1 && errno == EINTR);  // NOLINT
     CHECK_NE(s.flags, -1);
 
     if (uv_guess_handle(fd) != UV_TTY) continue;
     s.isatty = true;
 
-    do
-      err = tcgetattr(fd, &s.termios);
+    do err = tcgetattr(fd, &s.termios);
     while (err == -1 && errno == EINTR);  // NOLINT
     CHECK_EQ(err, 0);
   }
@@ -696,13 +693,11 @@ inline void PlatformInit() {
       // Ignore _close result. If it fails or not depends on used Windows
       // version. We will just check _open result.
       _close(fd);
-      if (fd != _open("nul", _O_RDWR))
-        ABORT();
+      if (fd != _open("nul", _O_RDWR)) ABORT();
     }
   }
 #endif  // _WIN32
 }
-
 
 // Safe to call more than once and from signal handlers.
 void ResetStdio() {
@@ -722,8 +717,7 @@ void ResetStdio() {
     if (!is_same_file) continue;  // Program reopened file descriptor.
 
     int flags;
-    do
-      flags = fcntl(fd, F_GETFL);
+    do flags = fcntl(fd, F_GETFL);
     while (flags == -1 && errno == EINTR);  // NOLINT
     CHECK_NE(flags, -1);
 
@@ -733,8 +727,7 @@ void ResetStdio() {
       flags |= s.flags & O_NONBLOCK;
 
       int err;
-      do
-        err = fcntl(fd, F_SETFL, flags);
+      do err = fcntl(fd, F_SETFL, flags);
       while (err == -1 && errno == EINTR);  // NOLINT
       CHECK_NE(err, -1);
     }
@@ -749,8 +742,7 @@ void ResetStdio() {
       sigaddset(&sa, SIGTTOU);
 
       CHECK_EQ(0, pthread_sigmask(SIG_BLOCK, &sa, nullptr));
-      do
-        err = tcsetattr(fd, TCSANOW, &s.termios);
+      do err = tcsetattr(fd, TCSANOW, &s.termios);
       while (err == -1 && errno == EINTR);  // NOLINT
       CHECK_EQ(0, pthread_sigmask(SIG_UNBLOCK, &sa, nullptr));
 
@@ -762,7 +754,6 @@ void ResetStdio() {
 #endif  // __POSIX__
 }
 
-
 int ProcessGlobalArgs(std::vector<std::string>* args,
                       std::vector<std::string>* exec_args,
                       std::vector<std::string>* errors,
@@ -771,13 +762,12 @@ int ProcessGlobalArgs(std::vector<std::string>* args,
   std::vector<std::string> v8_args;
 
   Mutex::ScopedLock lock(per_process::cli_options_mutex);
-  options_parser::Parse(
-      args,
-      exec_args,
-      &v8_args,
-      per_process::cli_options.get(),
-      settings,
-      errors);
+  options_parser::Parse(args,
+                        exec_args,
+                        &v8_args,
+                        per_process::cli_options.get(),
+                        settings,
+                        errors);
 
   if (!errors->empty()) return 9;
 
@@ -799,15 +789,18 @@ int ProcessGlobalArgs(std::vector<std::string>* args,
 
   // TODO(aduh95): remove this when the harmony-import-assertions flag
   // is removed in V8.
-  if (std::find(v8_args.begin(), v8_args.end(),
+  if (std::find(v8_args.begin(),
+                v8_args.end(),
                 "--no-harmony-import-assertions") == v8_args.end()) {
     v8_args.emplace_back("--harmony-import-assertions");
   }
 
   auto env_opts = per_process::cli_options->per_isolate->per_env;
-  if (std::find(v8_args.begin(), v8_args.end(),
+  if (std::find(v8_args.begin(),
+                v8_args.end(),
                 "--abort-on-uncaught-exception") != v8_args.end() ||
-      std::find(v8_args.begin(), v8_args.end(),
+      std::find(v8_args.begin(),
+                v8_args.end(),
                 "--abort_on_uncaught_exception") != v8_args.end()) {
     env_opts->abort_on_uncaught_exception = true;
   }
@@ -844,8 +837,8 @@ static std::atomic_bool init_called{false};
 int InitializeNodeWithArgs(std::vector<std::string>* argv,
                            std::vector<std::string>* exec_argv,
                            std::vector<std::string>* errors) {
-  return InitializeNodeWithArgs(argv, exec_argv, errors,
-                                ProcessFlags::kNoFlags);
+  return InitializeNodeWithArgs(
+      argv, exec_argv, errors, ProcessFlags::kNoFlags);
 }
 
 int InitializeNodeWithArgs(std::vector<std::string>* argv,
@@ -891,20 +884,16 @@ int InitializeNodeWithArgs(std::vector<std::string>* argv,
       // [0] is expected to be the program name, fill it in from the real argv.
       env_argv.insert(env_argv.begin(), argv->at(0));
 
-      const int exit_code = ProcessGlobalArgs(&env_argv,
-                                              nullptr,
-                                              errors,
-                                              kAllowedInEnvironment);
+      const int exit_code =
+          ProcessGlobalArgs(&env_argv, nullptr, errors, kAllowedInEnvironment);
       if (exit_code != 0) return exit_code;
     }
   }
 #endif
 
   if (!(flags & ProcessFlags::kDisableCLIOptions)) {
-    const int exit_code = ProcessGlobalArgs(argv,
-                                            exec_argv,
-                                            errors,
-                                            kDisallowedInEnvironment);
+    const int exit_code =
+        ProcessGlobalArgs(argv, exec_argv, errors, kDisallowedInEnvironment);
     if (exit_code != 0) return exit_code;
   }
 
@@ -947,12 +936,12 @@ int InitializeNodeWithArgs(std::vector<std::string>* argv,
     per_process::metadata.versions.InitializeIntlVersions();
   }
 
-# ifndef __POSIX__
+#ifndef __POSIX__
   std::string tz;
   if (credentials::SafeGetenv("TZ", &tz) && !tz.empty()) {
     i18n::SetDefaultTimeZone(tz.c_str());
   }
-# endif
+#endif
 
 #endif  // defined(NODE_HAVE_I18N_SUPPORT)
 
@@ -968,10 +957,10 @@ InitializationResult InitializeOncePerProcess(int argc, char** argv) {
 }
 
 InitializationResult InitializeOncePerProcess(
-  int argc,
-  char** argv,
-  InitializationSettingsFlags flags,
-  ProcessFlags::Flags process_flags) {
+    int argc,
+    char** argv,
+    InitializationSettingsFlags flags,
+    ProcessFlags::Flags process_flags) {
   uint64_t init_flags = flags;
   if (init_flags & kDefaultInitialization) {
     init_flags = init_flags | kInitializeV8 | kInitOpenSSL | kRunPlatformInit;
@@ -981,10 +970,11 @@ InitializationResult InitializeOncePerProcess(
   // environment variables.
   per_process::enabled_debug_list.Parse();
 
+  // 进程退出时，重置标准输入输出，清缓存啥的
   atexit(ResetStdio);
 
-  if (init_flags & kRunPlatformInit)
-    PlatformInit();
+  // 平台初始化，暂时没看懂
+  if (init_flags & kRunPlatformInit) PlatformInit();
 
   CHECK_GT(argc, 0);
 
@@ -997,6 +987,7 @@ InitializationResult InitializeOncePerProcess(
 
   // This needs to run *before* V8::Initialize().
   {
+    // 解析命令行参数
     result.exit_code = InitializeNodeWithArgs(
         &(result.args), &(result.exec_args), &errors, process_flags);
     for (const std::string& error : errors)
@@ -1015,6 +1006,7 @@ InitializationResult InitializeOncePerProcess(
     }
   }
 
+  // 这里就是我们常见的 node --version
   if (per_process::cli_options->print_version) {
     printf("%s\n", NODE_VERSION);
     result.exit_code = 0;
@@ -1126,10 +1118,11 @@ InitializationResult InitializeOncePerProcess(
 #endif  // HAVE_OPENSSL && !defined(OPENSSL_IS_BORINGSSL)
   }
 
-  per_process::v8_platform.Initialize(
-      static_cast<int>(per_process::cli_options->v8_thread_pool_size));
+  int size = static_cast<int>(per_process::cli_options->v8_thread_pool_size);
+  // 初始化v8::platform
+  per_process::v8_platform.Initialize(size);
   if (init_flags & kInitializeV8) {
-    V8::Initialize();
+    V8::Initialize();  // 初始化v8
   }
 
   performance::performance_v8_start = PERFORMANCE_NOW();
@@ -1244,6 +1237,7 @@ int LoadSnapshotDataAndRun(const SnapshotData** snapshot_data_ptr,
 }
 
 int Start(int argc, char** argv) {
+  std::cout << "Start" << std::endl;
   InitializationResult result = InitializeOncePerProcess(argc, argv);
   if (result.early_return) {
     return result.exit_code;
@@ -1271,6 +1265,7 @@ int Start(int argc, char** argv) {
               "Usage: node --build-snapshot /path/to/entry.js\n");
       return 9;
     }
+    std::cout << "Build snapshot" << std::endl;
     return GenerateAndWriteSnapshotData(&snapshot_data, &result);
   }
 

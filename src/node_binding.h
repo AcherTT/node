@@ -21,7 +21,7 @@ enum {
 
 // Make sure our internal values match the public API's values.
 static_assert(static_cast<int>(NM_F_LINKED) ==
-              static_cast<int>(node::ModuleFlags::kLinked),
+                  static_cast<int>(node::ModuleFlags::kLinked),
               "NM_F_LINKED != node::ModuleFlags::kLinked");
 
 #define NODE_MODULE_CONTEXT_AWARE_CPP(modname, regfunc, priv, flags)           \
@@ -35,7 +35,9 @@ static_assert(static_cast<int>(NM_F_LINKED) ==
       NODE_STRINGIFY(modname),                                                 \
       priv,                                                                    \
       nullptr};                                                                \
-  void _register_##modname() { node_module_register(&_module); }
+  void _register_##modname() {                                                 \
+    node_module_register(&_module);                                            \
+  }
 
 void napi_module_register_by_symbol(v8::Local<v8::Object> exports,
                                     v8::Local<v8::Value> module,
@@ -53,6 +55,7 @@ extern bool node_is_initialized;
 
 namespace binding {
 
+// 绑定动态库的类
 class DLib {
  public:
 #ifdef __POSIX__
@@ -63,6 +66,7 @@ class DLib {
 
   DLib(const char* filename, int flags);
 
+  // 打开 / 关闭一个动态链接库
   bool Open();
   void Close();
   void* GetSymbolAddress(const char* name);

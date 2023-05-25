@@ -323,6 +323,7 @@ MaybeLocal<Function> BuiltinLoader::LookupAndCompileInternal(
     }
   }
 
+  // V8 中用于保留一个局部的对象到函数返回后仍然可用的操作
   return scope.Escape(fun);
 }
 

@@ -1,4 +1,5 @@
 #include "node_main_instance.h"
+#include <iostream>
 #include <memory>
 #if HAVE_OPENSSL
 #include "crypto/crypto_util.h"
@@ -40,6 +41,8 @@ NodeMainInstance::NodeMainInstance(Isolate* isolate,
       platform_(platform),
       isolate_data_(nullptr),
       snapshot_data_(nullptr) {
+  std::cout << "NodeMainInstance::NodeMainInstance" << std::endl;
+  std::cout << args << std::endl;
   isolate_data_ =
       std::make_unique<IsolateData>(isolate_, event_loop, platform, nullptr);
 
@@ -80,6 +83,7 @@ NodeMainInstance::NodeMainInstance(const SnapshotData* snapshot_data,
   // Register the isolate on the platform before the isolate gets initialized,
   // so that the isolate can access the platform during initialization.
   platform->RegisterIsolate(isolate_, event_loop);
+  // 调整v8堆栈大小
   SetIsolateCreateParamsForNode(isolate_params_.get());
   Isolate::Initialize(isolate_, *isolate_params_);
 
@@ -91,6 +95,7 @@ NodeMainInstance::NodeMainInstance(const SnapshotData* snapshot_data,
       array_buffer_allocator_.get(),
       snapshot_data == nullptr ? nullptr : &(snapshot_data->isolate_data_info));
   IsolateSettings s;
+  // 一些v8功能的设置，暂时不关心
   SetIsolateMiscHandlers(isolate_, s);
   if (snapshot_data == nullptr) {
     // If in deserialize mode, delay until after the deserialization is
@@ -147,8 +152,7 @@ void NodeMainInstance::Run(int* exit_code, Environment* env) {
   struct sigaction act;
   memset(&act, 0, sizeof(act));
   for (unsigned nr = 1; nr < kMaxSignal; nr += 1) {
-    if (nr == SIGKILL || nr == SIGSTOP || nr == SIGPROF)
-      continue;
+    if (nr == SIGKILL || nr == SIGSTOP || nr == SIGPROF) continue;
     act.sa_handler = (nr == SIGPIPE) ? SIG_IGN : SIG_DFL;
     CHECK_EQ(0, sigaction(nr, &act, nullptr));
   }

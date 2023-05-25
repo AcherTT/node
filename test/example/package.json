@@ -1,0 +1,12 @@
+{
+  "name": "example",
+  "version": "1.0.0",
+  "description": "",
+  "main": "test1.js",
+  "scripts": {
+    "test": "../../out/Debug/node --expose-gc test1.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
